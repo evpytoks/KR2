@@ -1,0 +1,93 @@
+﻿version: '3.8'
+
+services:
+  api_gateway:
+    build:
+      context: ./API_Gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - FileStoringServiceUrl=http://file_storing:80
+      - FileAnalysisServiceUrl=http://file_analysis:80
+    depends_on:
+      file_analysis:
+        condition: service_started
+      file_storing:
+        condition: service_started
+    networks:
+      - plagiarism_network
+
+  file_analysis:
+    build:
+      context: ./FileAnalysisService
+      dockerfile: Dockerfile
+    ports:
+      - "8081:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - FileStoringServiceUrl=http://file_storing:80
+      - ConnectionStrings__AnalysisDb=Host=analyses_db;Database=analysisdb;Username=postgres;Password=postgrespassword
+    depends_on:
+      file_storing:
+        condition: service_started
+      analyses_db:
+        condition: service_healthy
+    networks:
+      - plagiarism_network
+
+  file_storing:
+    build:
+      context: ./FileStoringService
+      dockerfile: Dockerfile
+    ports:
+      - "8082:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__FilesDb=Host=file_db;Database=filedb;Username=postgres;Password=postgrespassword
+      - FilePath=/app/files
+    depends_on:
+      file_db:
+        condition: service_healthy
+    networks:
+      - plagiarism_network
+
+  analyses_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: analysisdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - analysis_db_data:/var/lib/postgresql/data
+    networks:
+      - plagiarism_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  file_db:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: filedb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - files_db_data:/var/lib/postgresql/data
+    networks:
+      - plagiarism_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  analysis_db_data:
+  files_db_data:
+
+networks:
+  plagiarism_network:
